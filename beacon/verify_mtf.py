@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from beacon._paths import PROJECT_ROOT
-from beacon.pipeline import NPI_TO_SHEET
+from beacon.constants import NPI_TO_SHEET
+from beacon.paths import PROJECT_ROOT
 
 INPUT_FILE: Path = PROJECT_ROOT / "Beacon_Full_Load.xlsx"
 

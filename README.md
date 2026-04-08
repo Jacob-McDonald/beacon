@@ -139,8 +139,11 @@ beacon/                    # repository root
     __init__.py
     __main__.py            # enables: python -m beacon
     cli.py                 # argparse; also exposed as console script `beacon`
-    pipeline.py            # load → chains → reports → MTF enrich → BeaconT2.xlsx
-    _paths.py              # PROJECT_ROOT for helper scripts
+    constants.py           # column names, output filenames, NPI → sheet map
+    paths.py               # PROJECT_ROOT for helper scripts
+    pipeline.py            # run() only — orchestrates the workflow
+    processing.py          # chains, MTF enrichment, Excel export
+    reports.py             # text reports (chains, retained ICNs, analytics)
     verify_mtf.py
     icn_by_location.py
 ```
