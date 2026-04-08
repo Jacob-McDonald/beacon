@@ -6,7 +6,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from .pipeline import run
+if __package__:
+    from .pipeline import run
+else:
+    # Running as `python beacon/cli.py` — not loaded as a package submodule
+    _root = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(_root))
+    from beacon.pipeline import run
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,8 +31,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "input",
+        nargs="?",
         type=Path,
-        help="path to the Beacon full-load .xlsx file",
+        default=None,
+        help=(
+            "path to the Beacon full-load .xlsx file "
+            "(default: Beacon_Full_Load.xlsx in the project root)"
+        ),
     )
     parser.add_argument(
         "-o",
@@ -40,12 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     """Parse arguments and run the deduplication pipeline."""
+    from beacon.paths import PROJECT_ROOT
+
     parser: argparse.ArgumentParser = build_parser()
     args: argparse.Namespace = parser.parse_args()
 
-    input_path: Path = args.input.resolve()
+    if args.input is None:
+        input_path = (PROJECT_ROOT / "Beacon_Full_Load.xlsx").resolve()
+    else:
+        input_path = args.input.resolve()
     if not input_path.is_file():
-        parser.error(f"input file not found: {args.input}")
+        parser.error(f"input file not found: {input_path}")
 
     output_dir: Path | None = None
     if args.output_dir is not None:

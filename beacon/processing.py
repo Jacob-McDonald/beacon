@@ -194,59 +194,20 @@ def enrich_with_mtf(
 ) -> pd.DataFrame:
     """Merge MTF columns into the retained DataFrame by ICN.
 
+    Uses a left merge so every retained row is preserved.  The MTF
+    lookup's Pharmacy NPI is dropped before merging because retained
+    already carries that column from sheet 1.
+
     Parameters:
         retained: Filtered DataFrame with at least an ICN column.
         mtf_lookup: Lookup table from build_mtf_lookup(), indexed by ICN.
 
     Returns:
-        A copy of *retained* with the MTF columns appended.
+        A copy of *retained* with the MTF data columns appended.
     """
-    # Only pull data columns; Pharmacy NPI is a routing key, not enrichment data
-    mtf_cols: list[str] = [
-        c for c in mtf_lookup.columns if c != "Pharmacy NPI"
-    ]
-
-    # Start with empty columns so unmatched rows get NA, not KeyError
-    enriched: pd.DataFrame = retained.copy()
-    for col in mtf_cols:
-        enriched[col] = pd.NA
-
-    # Filter to retained ICNs that exist in the MTF lookup
-    found: pd.Series = enriched["ICN"].isin(mtf_lookup.index)
-    matched_icns: pd.Series = enriched.loc[found, "ICN"]
-
-    # Copy values by aligned position — .values avoids index-alignment
-    # issues between the retained DataFrame and the MTF lookup
-    for col in mtf_cols:
-        enriched.loc[found, col] = mtf_lookup.loc[
-            matched_icns.values, col
-        ].values
-
-    return enriched
-
-
-def load_transaction_descriptions(path: Path) -> dict[str, str]:
-    """Load transaction code descriptions from the lookup spreadsheet.
-
-    Codes are zero-padded to 3 characters so they match the format
-    used in the Beacon full-load first sheet.
-
-    Parameters:
-        path: Path to the transaction codes .xlsx file.
-
-    Returns:
-        Dict mapping 3-char transaction code to its Description string.
-    """
-    df: pd.DataFrame = pd.read_excel(
-        path,
-        usecols=["Code", "Description"],
-        engine="openpyxl",
-        dtype="string",
-    )
-    df.columns = df.columns.str.strip()
-    # Codes in lookup are unpadded ("1"); full-load uses "001"
-    df["Code"] = df["Code"].str.zfill(3)
-    return dict(zip(df["Code"], df["Description"]))
+    # Drop Pharmacy NPI from the MTF side — retained already has it
+    mtf_data: pd.DataFrame = mtf_lookup.drop(columns=["Pharmacy NPI"])
+    return retained.merge(mtf_data, left_on="ICN", right_index=True, how="left")
 
 
 def enrich_with_transaction_desc(

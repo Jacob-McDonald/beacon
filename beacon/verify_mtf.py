@@ -8,6 +8,7 @@ import pandas as pd
 
 from beacon.constants import NPI_TO_SHEET
 from beacon.paths import PROJECT_ROOT
+from beacon.processing import get_retained_df, load_transactions
 
 INPUT_FILE: Path = PROJECT_ROOT / "Beacon_Full_Load.xlsx"
 
@@ -30,14 +31,9 @@ def verify(path: Path | None = None) -> bool:
     source: Path = path or INPUT_FILE
 
     print(f"Loading {source.name} ...")
-
-    sheet1: pd.DataFrame = pd.read_excel(
-        source, sheet_name=0, engine="openpyxl", dtype="string",
-    )
-    sheet1.columns = sheet1.columns.str.strip()
-
-    all_xrefs: set[str] = set(sheet1["Xref"].dropna())
-    retained: pd.DataFrame = sheet1[~sheet1["ICN"].isin(all_xrefs)].copy()
+    df: pd.DataFrame = load_transactions(source)
+    all_xrefs: set[str] = set(df["Xref"].dropna())
+    retained: pd.DataFrame = get_retained_df(df, all_xrefs)
     print(f"  {len(retained)} retained rows after chain filtering\n")
 
     total_checked: int = 0

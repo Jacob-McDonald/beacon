@@ -10,6 +10,14 @@ from beacon.constants import NPI_TO_SHEET
 from beacon.processing import Chain, ChainLink
 
 
+def _tally_chain_lengths(chains: list[Chain]) -> dict[int, int]:
+    """Count how many chains exist at each depth (2-link, 3-link, etc.)."""
+    counts: dict[int, int] = {}
+    for chain in chains:
+        counts[len(chain)] = counts.get(len(chain), 0) + 1
+    return counts
+
+
 def write_chain_report(
     chains: list[Chain],
     total_rows: int,
@@ -41,11 +49,7 @@ def write_chain_report(
             lines.append(f"      {row_display:>4} {link.icn}{xref_str} ")
         lines.append("")
 
-    # Tally chains by depth for the summary (e.g. "2-link chains: 310")
-    length_counts: dict[int, int] = {}
-    for chain in chains:
-        length: int = len(chain)
-        length_counts[length] = length_counts.get(length, 0) + 1
+    length_counts: dict[int, int] = _tally_chain_lengths(chains)
 
     discarded: int = total_rows - retained_count
     lines.append("")
@@ -103,35 +107,23 @@ def _location_name(npi: str) -> str:
     return NPI_TO_SHEET.get(npi, npi).removeprefix("MTF - ")
 
 
-def write_analytics_report(
+# ---------------------------------------------------------------------------
+# Analytics report: composed from four section helpers
+# ---------------------------------------------------------------------------
+
+
+def _overall_summary_section(
     enriched: pd.DataFrame,
     chains: list[Chain],
-    full_df: pd.DataFrame,
-    path: Path,
-) -> None:
-    """Write a comprehensive analytics text report.
-
-    Sections: overall summary, transaction code distribution by location,
-    chain statistics by location, and Rx/Fill analysis.
-
-    Parameters:
-        enriched: Retained rows after MTF enrichment (with Rx Num, Fill Num,
-                  and optionally Transaction Description).
-        chains: Chain list from build_chains().
-        full_df: The unfiltered DataFrame (for total row count and NPI
-                 lookups on chain origins).
-        path: Output file path.
-    """
-    locations: list[str] = list(NPI_TO_SHEET.keys())
-    loc_names: list[str] = [_location_name(n) for n in locations]
-    total_rows: int = len(full_df)
+    total_rows: int,
+    locations: list[str],
+    loc_names: list[str],
+) -> list[str]:
+    """Report header and high-level counts."""
     retained_count: int = len(enriched)
     discarded: int = total_rows - retained_count
 
     lines: list[str] = []
-
-    # ── Section 1: Overall Summary ──────────────────────────────────────
-
     lines.append("=" * 80)
     lines.append("  BEACON ANALYTICS REPORT")
     lines.append("=" * 80)
@@ -144,9 +136,7 @@ def write_analytics_report(
     lines.append(f"  Number of chains:            {len(chains)}")
     lines.append("")
 
-    length_counts: dict[int, int] = {}
-    for chain in chains:
-        length_counts[len(chain)] = length_counts.get(len(chain), 0) + 1
+    length_counts: dict[int, int] = _tally_chain_lengths(chains)
     lines.append("  Chain length distribution:")
     for depth in sorted(length_counts):
         lines.append(f"    {depth}-link chains: {length_counts[depth]}")
@@ -158,9 +148,16 @@ def write_analytics_report(
         lines.append(f"    {name:<14s}  {count:>5}")
     lines.append("")
     lines.append("")
+    return lines
 
-    # ── Section 2: Transaction Code Distribution by Location ────────────
 
+def _transaction_code_section(
+    enriched: pd.DataFrame,
+    locations: list[str],
+    loc_names: list[str],
+) -> list[str]:
+    """Transaction code distribution cross-tabulated by location."""
+    lines: list[str] = []
     lines.append("  TRANSACTION CODE DISTRIBUTION BY LOCATION")
     lines.append("  " + "-" * 40)
     lines.append("")
@@ -168,7 +165,6 @@ def write_analytics_report(
     has_desc: bool = "Transaction Description" in enriched.columns
     codes: list[str] = sorted(enriched["Transaction Code"].dropna().unique())
 
-    # Build description lookup from the enriched data itself
     desc_map: dict[str, str] = {}
     if has_desc:
         for code in codes:
@@ -178,11 +174,10 @@ def write_analytics_report(
             if len(first) > 0:
                 desc_map[code] = str(first.iloc[0])
 
-    # Determine column widths
     desc_width: int = max(
         (len(desc_map.get(c, "")) for c in codes), default=0,
     )
-    desc_width = max(desc_width, 11)  # "Description" header
+    desc_width = max(desc_width, 11)
     col_w: int = max(max((len(n) for n in loc_names), default=10), 5) + 2
 
     header: str = (
@@ -207,7 +202,6 @@ def write_analytics_report(
         row_parts.append(f"  {row_total:>{col_w}d}")
         lines.append("".join(row_parts))
 
-    # Totals row
     total_parts: list[str] = [
         f"  {'':5s}  {'Total':<{desc_width}s}",
     ]
@@ -221,14 +215,21 @@ def write_analytics_report(
     lines.append("".join(total_parts))
     lines.append("")
     lines.append("")
+    return lines
 
-    # ── Section 3: Chain Statistics by Location ─────────────────────────
 
+def _chain_stats_section(
+    chains: list[Chain],
+    full_df: pd.DataFrame,
+    locations: list[str],
+    loc_names: list[str],
+) -> list[str]:
+    """Chain counts and depth distribution broken out by pharmacy location."""
+    lines: list[str] = []
     lines.append("  CHAIN STATISTICS BY LOCATION")
     lines.append("  " + "-" * 40)
     lines.append("")
 
-    # Tag each chain's origin by looking up its first link's NPI
     icn_to_npi: dict[str, str] = dict(
         zip(full_df["ICN"], full_df["Pharmacy NPI"]),
     )
@@ -244,18 +245,21 @@ def write_analytics_report(
         lines.append(f"  {name}")
         lines.append(f"    Chains: {len(loc_chains)}")
         if loc_chains:
-            loc_depth: dict[int, int] = {}
-            for chain in loc_chains:
-                loc_depth[len(chain)] = loc_depth.get(len(chain), 0) + 1
+            loc_depth: dict[int, int] = _tally_chain_lengths(loc_chains)
             for depth in sorted(loc_depth):
-                lines.append(
-                    f"      {depth}-link: {loc_depth[depth]}"
-                )
+                lines.append(f"      {depth}-link: {loc_depth[depth]}")
         lines.append("")
     lines.append("")
+    return lines
 
-    # ── Section 4: Rx Num / Fill Num Analysis ───────────────────────────
 
+def _rx_fill_section(
+    enriched: pd.DataFrame,
+    locations: list[str],
+    loc_names: list[str],
+) -> list[str]:
+    """Rx Num / Fill Num breakdown per location."""
+    lines: list[str] = []
     lines.append("  RX NUM / FILL NUM ANALYSIS")
     lines.append("  " + "-" * 40)
     lines.append("")
@@ -270,7 +274,6 @@ def write_analytics_report(
         lines.append(f"    Retained rows:  {len(subset)}")
         lines.append(f"    Unique Rx Nums: {unique_rx}")
 
-        # Fill distribution
         if len(fill_valid) > 0:
             fill_counts: pd.Series = fill_valid.value_counts().sort_index()
             lines.append("    Fill Num distribution:")
@@ -278,7 +281,6 @@ def write_analytics_report(
                 label: str = "new" if str(fill_val) == "0" else "refill"
                 lines.append(f"      Fill {fill_val:>3s}: {cnt:>5d}  ({label})")
 
-        # Rx numbers appearing more than once (multiple fills)
         rx_dupes: pd.Series = rx_valid.value_counts()
         multi_fill_rx: pd.Series = rx_dupes[rx_dupes > 1]
         if len(multi_fill_rx) > 0:
@@ -296,5 +298,36 @@ def write_analytics_report(
 
     lines.append("=" * 80)
     lines.append("")
+    return lines
+
+
+def write_analytics_report(
+    enriched: pd.DataFrame,
+    chains: list[Chain],
+    full_df: pd.DataFrame,
+    path: Path,
+) -> None:
+    """Write a comprehensive analytics text report.
+
+    Composes four sections: overall summary, transaction code distribution
+    by location, chain statistics by location, and Rx/Fill analysis.
+
+    Parameters:
+        enriched: Retained rows after MTF enrichment (with Rx Num, Fill Num,
+                  and optionally Transaction Description).
+        chains: Chain list from build_chains().
+        full_df: The unfiltered DataFrame (for total row count and NPI
+                 lookups on chain origins).
+        path: Output file path.
+    """
+    locations: list[str] = list(NPI_TO_SHEET.keys())
+    loc_names: list[str] = [_location_name(n) for n in locations]
+    total_rows: int = len(full_df)
+
+    lines: list[str] = []
+    lines += _overall_summary_section(enriched, chains, total_rows, locations, loc_names)
+    lines += _transaction_code_section(enriched, locations, loc_names)
+    lines += _chain_stats_section(chains, full_df, locations, loc_names)
+    lines += _rx_fill_section(enriched, locations, loc_names)
 
     path.write_text("\n".join(lines), encoding="utf-8")
