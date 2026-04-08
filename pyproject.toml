@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "beacon"
+version = "0.1.0"
+description = "Beacon ICN chain deduplication and MTF enrichment for rebate full-load workbooks"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "openpyxl>=3.1.5",
+    "pandas>=3.0.2",
+]
+
+[project.scripts]
+beacon = "beacon.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["beacon"]
