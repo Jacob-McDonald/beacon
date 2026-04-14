@@ -8,7 +8,7 @@ REQUIRED_COLUMNS: list[str] = ["ICN", "Xref", "Transaction Code", "Pharmacy NPI"
 # Default artifact filenames (basename only; join with output or input dir)
 XREF_CHAIN_REPORT_FILE: str = "Xref_Chain_Report.txt"
 RETAINED_ICNS_REPORT_FILE: str = "ICN_Retained.txt"
-FILTERED_EXCEL_OUTPUT_FILE: str = "BeaconT2.xlsx"
+FILTERED_EXCEL_OUTPUT_FILE: str = "Beacon_Filtered.xlsx"
 BEACON_ANALYTICS_REPORT_FILE: str = "Beacon_Analytics.txt"
 
 # MFP transaction code → short label (keys are 3-char zero-padded, matching sheet 1)
