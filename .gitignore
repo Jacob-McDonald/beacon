@@ -12,3 +12,7 @@ wheels/
 # Data and generated reports
 *.xlsx
 *.txt
+
+# Claude Code session state and worktrees
+.claude/
+output/
