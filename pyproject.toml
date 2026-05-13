@@ -23,4 +23,8 @@ packages = ["beacon"]
 dev = [
     "mypy>=1.20.2",
     "pandas-stubs>=3.0.0.260204",
+    "pytest>=8.0",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
