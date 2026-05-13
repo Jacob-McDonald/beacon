@@ -1,10 +1,14 @@
-"""Rx/Fill duplicate reports: classify (Rx Num, Fill Num) collisions.
+"""Rx/Fill duplicate reports: classify same-pharmacy collisions.
 
 A retained row is the head of a multi-link chain (the most recent
-submission Beacon kept).  When two retained rows share the same
-``(Rx Num, Fill Num)`` they are flagged as a duplicate group and
-classified by the full oldest-to-newest transaction-code sequence of
-their respective chains.
+submission Beacon kept).  When two retained rows for the **same
+pharmacy** share the same ``(Rx Num, Fill Num)`` they are flagged as
+a duplicate group and classified by the full oldest-to-newest
+transaction-code sequence of their respective chains.
+
+Rx numbers are issued per pharmacy, so the same ``(Rx, Fill)`` under
+two different NPIs is not a duplicate — the key is therefore
+``(Pharmacy NPI, Rx Num, Fill Num)``.
 """
 
 from __future__ import annotations
@@ -38,8 +42,14 @@ class _DupRow:
 
 @dataclass(frozen=True, slots=True)
 class _DupGroup:
-    """All retained rows sharing the same (Rx Num, Fill Num)."""
+    """All retained rows sharing the same (Pharmacy NPI, Rx Num, Fill Num).
 
+    Because the key includes NPI, every row in *rows* belongs to the
+    same pharmacy — ``npi`` is stored once on the group rather than
+    being re-derived from a row.
+    """
+
+    npi: str
     rx: str
     fill: str
     rows: tuple[_DupRow, ...]
@@ -111,7 +121,13 @@ def _build_duplicate_groups(
     chains: list[Chain],
     full_df: pd.DataFrame,
 ) -> list[_DupGroup]:
-    """Return every (Rx Num, Fill Num) group with more than one retained row.
+    """Return every (NPI, Rx Num, Fill Num) group with more than one retained row.
+
+    Rx numbers are issued per pharmacy, so two retained rows with the
+    same Rx / Fill under different NPIs are *not* duplicates.  Grouping
+    by NPI alongside Rx and Fill restricts collisions to a single MTF
+    sheet at a time, which is the only setting in which a duplicate is
+    operationally meaningful.
 
     Rows within each group are ordered by head ICN ascending so the
     caller can rely on a stable "submission-order" presentation.
@@ -123,13 +139,17 @@ def _build_duplicate_groups(
     needed[BEACON_COL_RX_NUM] = needed[BEACON_COL_RX_NUM].astype(str).str.strip()
     needed[BEACON_COL_FILL_NUM] = needed[BEACON_COL_FILL_NUM].astype(str).str.strip()
     needed[BEACON_COL_ICN] = needed[BEACON_COL_ICN].astype(str).str.strip()
+    needed[BEACON_COL_PHARMACY_NPI] = (
+        needed[BEACON_COL_PHARMACY_NPI].astype(str).str.strip()
+    )
 
     head_to_chain: dict[str, Chain] = _head_to_chain_map(chains)
     icn_to_code: dict[str, str] = _icn_to_code_map(full_df)
 
     groups: list[_DupGroup] = []
-    for (rx, fill), raw in needed.groupby(
-        [BEACON_COL_RX_NUM, BEACON_COL_FILL_NUM], sort=False,
+    for (npi, rx, fill), raw in needed.groupby(
+        [BEACON_COL_PHARMACY_NPI, BEACON_COL_RX_NUM, BEACON_COL_FILL_NUM],
+        sort=False,
     ):
         if len(raw) <= 1:
             continue
@@ -144,7 +164,9 @@ def _build_duplicate_groups(
             )
             for _, r in ordered.iterrows()
         )
-        groups.append(_DupGroup(rx=str(rx), fill=str(fill), rows=rows))
+        groups.append(
+            _DupGroup(npi=str(npi), rx=str(rx), fill=str(fill), rows=rows),
+        )
     return groups
 
 
@@ -208,10 +230,14 @@ def _write_duplicate_patterns(groups: list[_DupGroup], path: Path) -> None:
 
     lines: list[str] = []
     lines.append("=" * 80)
-    lines.append("  RX/FILL DUPLICATE PATTERNS")
+    lines.append("  RX/FILL DUPLICATE PATTERNS (within a single pharmacy)")
     lines.append("=" * 80)
     lines.append("")
     lines.append(f"  Total duplicate groups: {len(groups)}")
+    lines.append(
+        "  Duplicates are keyed on (Pharmacy NPI, Rx Num, Fill Num); same Rx/Fill"
+    )
+    lines.append("  under different NPIs is not a duplicate.")
     lines.append("  Pattern = the multiset of per-row chain code sequences")
     lines.append("  (oldest -> newest within each chain; row order is not significant).")
     lines.append("  Insight = business state of each chain based on its terminal code.")
@@ -250,18 +276,22 @@ def _write_duplicate_groups(groups: list[_DupGroup], path: Path) -> None:
 
     lines: list[str] = []
     lines.append("=" * 80)
-    lines.append("  RX/FILL DUPLICATE GROUPS")
+    lines.append("  RX/FILL DUPLICATE GROUPS (within a single pharmacy)")
     lines.append("=" * 80)
     lines.append("")
     lines.append(f"  Total duplicate groups: {len(groups)}")
-    lines.append("  Groups are ordered by pattern, then by Rx Num and Fill Num.")
+    lines.append(
+        "  Duplicates are keyed on (Pharmacy NPI, Rx Num, Fill Num); same Rx/Fill"
+    )
+    lines.append("  under different NPIs is not a duplicate.")
+    lines.append("  Groups are ordered by pattern, then by Location, Rx Num, Fill Num.")
     lines.append("  Rows within each group are listed by head ICN ascending.")
     lines.append("  Each row shows its retained head ICN and the full chain's codes.")
     lines.append("")
 
     for pattern in sorted_patterns:
         group_list: list[_DupGroup] = sorted(
-            by_pattern[pattern], key=lambda g: (g.rx, g.fill),
+            by_pattern[pattern], key=lambda g: (g.npi, g.rx, g.fill),
         )
         lines.append("")
         lines.append("  " + "=" * 76)
@@ -270,7 +300,7 @@ def _write_duplicate_groups(groups: list[_DupGroup], path: Path) -> None:
         )
         lines.append("  " + "=" * 76)
         for group in group_list:
-            npi_display: str = location_name(group.rows[0].npi)
+            npi_display: str = location_name(group.npi)
             lines.append(
                 f"    Rx {group.rx}  Fill {group.fill}  Location {npi_display}"
             )
@@ -293,11 +323,15 @@ def write_duplicate_reports(
 ) -> None:
     """Write both Rx/Fill duplicate reports.
 
-    A duplicate is any (Rx Num, Fill Num) that appears on more than one
-    retained row.  Each retained row represents the head of one xref
-    chain in the full-load workbook, so the unit of classification is
-    the full oldest-to-newest Transaction Code sequence of that chain.
-    Rows within a group are ordered by the retained head's ICN ascending.
+    A duplicate is any ``(Pharmacy NPI, Rx Num, Fill Num)`` that appears
+    on more than one retained row.  Including NPI in the key restricts
+    collisions to a single pharmacy — Rx numbers are issued per-pharmacy,
+    so a shared ``(Rx, Fill)`` across two NPIs is not a real duplicate.
+
+    Each retained row represents the head of one xref chain in the
+    full-load workbook, so the unit of classification is the full
+    oldest-to-newest Transaction Code sequence of that chain.  Rows
+    within a group are ordered by the retained head's ICN ascending.
 
     Parameters:
         enriched: Retained rows after MTF enrichment (must include
