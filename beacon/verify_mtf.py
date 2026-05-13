@@ -12,8 +12,8 @@ from beacon.constants import (
     BEACON_COL_PHARMACY_NPI,
     DEFAULT_INPUT_FILENAME,
     NPI_TO_SHEET,
+    PROJECT_ROOT,
 )
-from beacon.paths import PROJECT_ROOT
 from beacon.processing import build_mtf_lookup, get_retained_df, load_transactions
 
 INPUT_FILE: Path = PROJECT_ROOT / DEFAULT_INPUT_FILENAME

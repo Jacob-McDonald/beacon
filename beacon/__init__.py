@@ -13,9 +13,9 @@ are considered the supported entry points.
 
 Submodules:
 
-- :mod:`beacon.constants` — fixed strings, NPI maps, transaction labels.
+- :mod:`beacon.constants` — fixed strings, NPI maps, transaction labels,
+  and the ``PROJECT_ROOT`` anchor used for default file paths.
 - :mod:`beacon.keys` — (ICN, NPI, Rx, Fill) join-key normalisation.
-- :mod:`beacon.paths` — repo-root resolver for default file paths.
 - :mod:`beacon.pipeline` — top-level :func:`run` and config / result types.
 - :mod:`beacon.processing` — load, chain-build, enrichment, Excel export.
 - :mod:`beacon.reports` — text-report writers (chains, analytics, dupes,

@@ -12,8 +12,17 @@ for bulk ``usecols=`` calls into ``pd.read_excel``.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
+
+# ---------------------------------------------------------------------------
+# Project root — used to anchor default file paths (e.g. the default
+# input workbook resolved by the CLI / verify_mtf when no path is given).
+# ---------------------------------------------------------------------------
+
+# beacon/constants.py -> beacon/ -> project root
+PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
 
 # ---------------------------------------------------------------------------
 # Beacon workbook column headers (sheet 1 + MTF sheets after join).

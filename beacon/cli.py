@@ -7,8 +7,7 @@ import logging
 import sys
 from pathlib import Path
 
-from beacon.constants import DEFAULT_INPUT_FILENAME
-from beacon.paths import PROJECT_ROOT
+from beacon.constants import DEFAULT_INPUT_FILENAME, PROJECT_ROOT
 from beacon.pipeline import PipelineConfig, run
 
 
